@@ -246,7 +246,6 @@ catch (Exception ex)
         return Ok(returnFields);
     }
     [HttpPost("admin")]
-    [Authorize(Roles = StaticUserRoles.ADMIN)]
     public async Task<IActionResult> AdminLogin([FromBody] LoginDto loginDto)
     {
         ValidationResult result = await _loginValidator.ValidateAsync(loginDto);
@@ -265,6 +264,10 @@ catch (Exception ex)
             return Unauthorized("Invalid entry");
         
         var userRoles = await _userManager.GetRolesAsync(user);
+        if (!userRoles.Contains(StaticUserRoles.ADMIN))
+        {
+            return StatusCode(403);
+        }
         var authClaims = new List<Claim>
         {
             new Claim(ClaimTypes.Email, user.Email),
@@ -293,7 +296,11 @@ catch (Exception ex)
     [Authorize]
     public async Task<IActionResult> GetAdminLogged()
     {
-        var adminLogged = User.FindFirst("AdminLogged").Value;
+        var adminLogged = User.FindFirst("AdminLogged")?.Value;
+        if (adminLogged != "Logged")
+        {
+            return BadRequest("User is not a admin");
+        }
         return Ok(adminLogged);
     }
 
