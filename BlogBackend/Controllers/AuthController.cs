@@ -245,6 +245,57 @@ catch (Exception ex)
         };
         return Ok(returnFields);
     }
+    [HttpPost("admin")]
+    [Authorize(Roles = StaticUserRoles.ADMIN)]
+    public async Task<IActionResult> AdminLogin([FromBody] LoginDto loginDto)
+    {
+        ValidationResult result = await _loginValidator.ValidateAsync(loginDto);
+        if (!result.IsValid)
+        {
+            return BadRequest("Invalid entry");
+        }
+
+        var user = await _userManager.FindByEmailAsync(loginDto.Email);
+        if (user is null)
+            return Unauthorized("Invalid entry");
+
+
+        var isPasswordCorrect = await _userManager.CheckPasswordAsync(user, loginDto.Password);
+        if (!isPasswordCorrect)
+            return Unauthorized("Invalid entry");
+        
+        var userRoles = await _userManager.GetRolesAsync(user);
+        var authClaims = new List<Claim>
+        {
+            new Claim(ClaimTypes.Email, user.Email),
+            new Claim(ClaimTypes.NameIdentifier, user.Id),
+            new Claim("JWTID", Guid.NewGuid().ToString()),
+            new Claim("AdminLogged", "Logged")
+        };
+        foreach (var userRole in userRoles)
+        {
+            authClaims.Add(new Claim(ClaimTypes.Role, userRole));
+        }
+
+        var token = GenerateJWT(authClaims);
+        HttpContext.Response.Cookies.Append("jwt", token, new CookieOptions
+        {
+            Expires = DateTime.Now.AddHours(1),
+            HttpOnly = true,
+            Secure = true,
+            IsEssential = true,
+            SameSite = SameSiteMode.None
+        });
+        return Ok();
+    }
+
+    [HttpGet("get_admin_logged")]
+    [Authorize]
+    public async Task<IActionResult> GetAdminLogged()
+    {
+        var adminLogged = User.FindFirst("AdminLogged").Value;
+        return Ok(adminLogged);
+    }
 
     private string GenerateJWT(List<Claim> claims)
     {
