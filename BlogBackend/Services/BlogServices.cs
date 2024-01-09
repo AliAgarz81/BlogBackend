@@ -20,14 +20,15 @@ public class BlogServices : IBlogServices
         return await _context.Blogs.OrderBy(b => b.Id).ToListAsync();
     }
 
-    public async Task<Blog> GetAsync(int Id)
+    public async Task<Blog?> GetAsync(int Id)
     {
         return await _context.Blogs.FirstOrDefaultAsync(b => b.Id == Id);
     }
 
     public async Task<Blog> GetByNameAsync(string Name)
-    {
-        return await _context.Blogs.FirstOrDefaultAsync(b => b.Title == Name);
+    { 
+        var blog = await _context.Blogs.FirstOrDefaultAsync(b => b.Title == Name);
+        return blog;
     }
 
     public async Task<List<Blog>> GetByTagAsync(string tag)
@@ -93,7 +94,75 @@ public class BlogServices : IBlogServices
     }
 
 
-    public async Task UpdateAsync(int id, BlogDto blogDto, string imageName, string userId)
+    public async Task<bool> UpdateAsync(int id, BlogDto blogDto, string imageName, string userId)
+    {
+        List<Tag> newTags = new List<Tag>();
+        List<BlogTag> newBlogTags = new List<BlogTag>();
+        foreach (string tag in blogDto.Tags)
+        {
+            var existingTag = await _context.Tags.FirstOrDefaultAsync(t => t.Name == tag);
+
+            if (existingTag is null)
+            {
+                var newTag = new Tag { Name = tag };
+                newTags.Add(newTag);
+            }
+        }
+
+        if (newTags.Any())
+        {
+            await _context.Tags.AddRangeAsync(newTags);
+            await _context.SaveChangesAsync();
+        }
+
+        Blog? blog = await _context.Blogs.Include(b => b.BlogTags).FirstOrDefaultAsync(b => b.Id == id);
+        _context.BlogTags.RemoveRange(blog.BlogTags);
+        foreach (var currentTag in blogDto.Tags)
+        {
+            var existingTag = await _context.Tags.FirstOrDefaultAsync(t => t.Name == currentTag);
+            var tag = new BlogTag()
+            {
+                BlogId = blog.Id,
+                TagId = existingTag.Id
+            };
+            newBlogTags.Add(tag);
+        }
+
+        await _context.BlogTags.AddRangeAsync(newBlogTags);
+        if (blog?.UserId != userId)
+        {
+            return false;
+        }
+        blog.Title = blogDto.Title;
+        blog.Text = blogDto.Text;
+        blog.CoverImgUrl = blogDto.CoverImgUrl != null ? $"{imageName}{blogDto.CoverImgUrl.FileName}" : " ";
+        blog.Category = blogDto.Category;
+        blog.UserId = userId;
+        _context.Update(blog);
+        await _context.SaveChangesAsync();
+        return true;
+    }
+
+    public async Task<bool> DeleteAsync(int Id, string userId)
+    {
+        var blog = await _context.Blogs
+            .Include(b => b.BlogTags)
+            .FirstOrDefaultAsync(b => b.Id == Id);
+
+        if (blog?.UserId != userId)
+        {
+            return false;
+        }
+        if (blog != null)
+        {
+            _context.Blogs.Remove(blog);
+            await _context.SaveChangesAsync();
+            return true;
+        }
+        return false;
+    }
+
+    public async Task AdminUpdateAsync(int id, BlogDto blogDto, string imageName)
     {
         List<Tag> newTags = new List<Tag>();
         List<BlogTag> newBlogTags = new List<BlogTag>();
@@ -132,27 +201,20 @@ public class BlogServices : IBlogServices
         blog.Text = blogDto.Text;
         blog.CoverImgUrl = blogDto.CoverImgUrl != null ? $"{imageName}{blogDto.CoverImgUrl.FileName}" : " ";
         blog.Category = blogDto.Category;
-        blog.UserId = userId;
         _context.Update(blog);
         await _context.SaveChangesAsync();
     }
 
-    public async Task<bool> DeleteAsync(int Id, string userId)
+    public async Task AdminDeleteAsync(int id)
     {
         var blog = await _context.Blogs
             .Include(b => b.BlogTags)
-            .FirstOrDefaultAsync(b => b.Id == Id);
-
-        if (blog?.UserId != userId)
-        {
-            return false;
-        }
+            .FirstOrDefaultAsync(b => b.Id == id);
+        
         if (blog != null)
         {
             _context.Blogs.Remove(blog);
             await _context.SaveChangesAsync();
-            return true;
         }
-        return false;
     }
 }

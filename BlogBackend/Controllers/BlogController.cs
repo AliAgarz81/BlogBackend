@@ -33,9 +33,11 @@ public class BlogController : ControllerBase
     [HttpGet("{blogId}")]
     public async Task<IActionResult> GetBlogById(int blogId)
     {
-        var blog = _blogServices.GetAsync(blogId);
+        var blog = await _blogServices.GetAsync(blogId);
         if (blog is null)
-            return BadRequest();
+        {
+            return BadRequest("Blog doesn't exists");
+        }
         return Ok(blog);
     }
 
@@ -93,8 +95,8 @@ public class BlogController : ControllerBase
             return BadRequest(ModelState);
         }
 
-        var checkBlog =  _blogServices.GetAsync(id);
-        if (checkBlog.Result is null)
+        var checkBlog = await _blogServices.GetAsync(id);
+        if (checkBlog is null)
         {
             return BadRequest("Blog doesn't exist");
         }
@@ -111,9 +113,13 @@ public class BlogController : ControllerBase
             })
             : Task.CompletedTask;
         var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-        await Task.WhenAll(uploadTask, checkBlog);
-        await _blogServices.UpdateAsync(id, blogDto, imageName, userId);
-        return Ok();
+        await Task.WhenAll(uploadTask);
+        var response = await _blogServices.UpdateAsync(id, blogDto, imageName, userId);
+        if (response)
+        {
+            return Ok();
+        }
+        return BadRequest();
     }
 
     [HttpDelete("{id}")]
@@ -121,8 +127,8 @@ public class BlogController : ControllerBase
     public async Task<IActionResult> DeleteBlog(int id)
     {
         var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-        var result = _blogServices.DeleteAsync(id, userId);
-        if (await result)
+        var result = await _blogServices.DeleteAsync(id, userId);
+        if (result)
         {
             return Ok();
         }
@@ -135,5 +141,56 @@ public class BlogController : ControllerBase
     {
         var result = await _blogServices.GetByTagAsync(tag);
         return Ok(result);
+    }
+
+    [HttpPut("admin/{id}")]
+    [Authorize(Policy = "AdminPolicy")]
+    public async Task<IActionResult> AdminUpdateBlog(int id, [FromForm] BlogDto blogDto)
+    {
+        ValidationResult result = await _validator.ValidateAsync(blogDto);
+        if (!result.IsValid)
+        {
+            foreach (var error in result.Errors)
+            {
+                ModelState.AddModelError(error.PropertyName, error.ErrorMessage);
+            }
+    
+            return BadRequest(ModelState);
+        }
+
+        var checkBlog =  await _blogServices.GetAsync(id);
+        if (checkBlog is null)
+        {
+            return BadRequest("Blog doesn't exist");
+        }
+        string imageName = Guid.NewGuid().ToString();
+        string fileName = blogDto.CoverImgUrl != null ? $"{imageName}{blogDto.CoverImgUrl.FileName}" : " ";
+        string filePath = Path.Combine("wwwroot", "Uploads", fileName);
+        var uploadTask = blogDto.CoverImgUrl != null
+            ? Task.Run(async () =>
+            {
+                using (var stream = new FileStream(filePath, FileMode.Create))
+                {
+                    await blogDto.CoverImgUrl.CopyToAsync(stream);
+                }
+            })
+            : Task.CompletedTask;
+        await Task.WhenAll(uploadTask);
+        await _blogServices.AdminUpdateAsync(id, blogDto, imageName);
+        return Ok();
+    }
+    
+    [HttpDelete("admin/{id}")]
+    [Authorize(Policy = "AdminPolicy")]
+    public async Task<IActionResult> AdminDeleteBlog(int id)
+    {
+
+        var checkBlog =  _blogServices.GetAsync(id);
+        if (checkBlog.Result is null)
+        {
+            return BadRequest("Blog doesn't exist");
+        }
+        await _blogServices.AdminDeleteAsync(id);
+        return Ok();
     }
 }

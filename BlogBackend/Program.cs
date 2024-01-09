@@ -44,6 +44,14 @@ builder.Services.Configure<IdentityOptions>(options =>
     options.SignIn.RequireConfirmedEmail = false;
 });
 
+builder.Services.AddAuthorization(options =>
+{
+    options.AddPolicy("AdminPolicy", policy =>
+    {
+        policy.RequireClaim("AdminLogged", "Logged");
+    });
+});
+
 builder.Services
     .AddAuthentication(options =>
     {
